@@ -1,12 +1,6 @@
-import { OptionalId } from "mongodb";
+import { Document, OptionalId } from "mongodb";
 import { isArray } from "lodash";
-import {
-  Collection,
-  Document,
-  InsertPolicy,
-  mapDeep,
-  stackToKey
-} from "../../.";
+import { Collection, InsertPolicy, mapDeep, stackToKey } from "../../.";
 
 // This function verifies the validity of an insertion doc by looking for dangling keys :
 

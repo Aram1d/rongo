@@ -1,17 +1,18 @@
 import {
-  CollectionInsertManyOptions,
-  InsertOneWriteOpResult,
-  InsertWriteOpResult,
+  BulkWriteOptions,
+  Document,
+  InsertManyResult,
+  InsertOneResult,
+  OptionalUnlessRequiredId,
   WithId
 } from "mongodb";
 import { castArray, entries, isArray } from "lodash";
 import {
   Collection,
-  Document,
   InsertionDoc,
-  normalizeInsertionDoc,
   Rongo,
-  verifyInsertionDoc
+  verifyInsertionDoc,
+  normalizeInsertionDoc
 } from "../../.";
 
 // This function is used to perform nested inserts in a safe way :
@@ -20,7 +21,7 @@ export async function insertSafely<T extends Document>(
   collection: Collection<T>,
   doc: InsertionDoc<T> | Array<InsertionDoc<T>>,
   dependencies: DependencyCollector,
-  options?: CollectionInsertManyOptions & { baseDocument?: boolean }
+  options?: BulkWriteOptions & { baseDocument?: boolean }
 ) {
   const col = await collection.handle;
   const normalized = await normalizeInsertionDoc(
@@ -30,22 +31,33 @@ export async function insertSafely<T extends Document>(
     options
   );
   await verifyInsertionDoc(collection, normalized);
-  let result:
-    | InsertOneWriteOpResult<WithId<T>>
-    | InsertWriteOpResult<WithId<T>>;
+  let result: InsertManyResult<T> | InsertOneResult<T>;
   let documents: WithId<T> | Array<WithId<T>>;
   if (!isArray(normalized)) {
-    result = await col.insertOne(normalized, options);
-    documents = result.ops[0];
+    result = (options
+      ? await col.insertOne(normalized as OptionalUnlessRequiredId<T>, options)
+      : await col.insertOne(
+          normalized as OptionalUnlessRequiredId<T>
+        )) as InsertOneResult<T>;
+    documents = (await col.findOne({ _id: result.insertedId as any })) as any;
   } else {
-    result = await col.insertMany(normalized, options);
-    documents = result.ops;
+    result = options
+      ? await col.insertMany(
+          normalized as OptionalUnlessRequiredId<T>[],
+          options
+        )
+      : ((await col.insertMany(
+          normalized as OptionalUnlessRequiredId<T>[]
+        )) as InsertManyResult<T>);
+    documents = await col
+      .find({ _id: { $in: result.insertedIds } } as any)
+      .toArray();
   }
   dependencies.add(
     collection,
     await collection.from(documents).select(collection.key)
   );
-  if (!result.result.ok)
+  if (!result.acknowledged)
     throw new Error(
       `Something went wrong in the MongoDB driver during insert in collection <${collection.name}>`
     );

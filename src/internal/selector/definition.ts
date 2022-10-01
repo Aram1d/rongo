@@ -2,7 +2,7 @@ import { flatten, isArray, isEmpty, isPlainObject, keys } from "lodash";
 import {
   asyncFilter,
   Collection,
-  FilterQuery,
+  Filter,
   LazyDocuments,
   SelectionOption,
   SelectorPredicateCallback,
@@ -339,10 +339,10 @@ export class SwitchSelector extends Selector {
 // The FilterQuerySelector adds a filter query to the current lazy array of documents
 
 export class FilterQuerySelector extends Selector {
-  private readonly query: FilterQuery<any>;
+  private readonly query: Filter<any>;
   private readonly selector: Selector;
 
-  constructor(query: FilterQuery<any>, selector: Selector) {
+  constructor(query: Filter<any>, selector: Selector) {
     super();
     this.query = query;
     this.selector = selector;

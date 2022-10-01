@@ -1,4 +1,4 @@
-import { WithId } from "mongodb";
+import { WithId, Document } from "mongodb";
 
 // Used to store the collection dependencies in an optimally exploitable manner
 
@@ -61,7 +61,7 @@ export enum DeletePolicy {
 
 // The general type constraint for documents
 
-export type Document = object;
+//export type Document = object;
 
 // The general type constraint for graph-documents
 

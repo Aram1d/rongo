@@ -1,32 +1,36 @@
 import {
+  AggregateOptions,
+  BulkWriteOptions,
   ChangeStreamOptions,
   ClientSession,
   Collection as Col,
-  CollectionAggregationOptions,
-  CollectionInsertManyOptions,
-  CommonOptions,
-  DbCollectionOptions,
-  FindOneAndReplaceOption,
-  FindOneAndUpdateOption,
-  FindOneOptions,
-  GeoHaystackSearchOptions,
-  IndexOptions,
-  IndexSpecification,
-  MongoCountPreferences,
-  MongoDistinctPreferences,
-  ReadPreferenceOrMode,
-  ReplaceOneOptions,
-  UpdateManyOptions,
-  UpdateQuery,
+  CollectionOptions,
+  CollStatsOptions,
+  CountDocumentsOptions,
+  CreateIndexesOptions,
+  DeleteOptions,
+  DistinctOptions,
+  DropCollectionOptions,
+  DropIndexesOptions,
+  Document,
+  FindOneAndReplaceOptions,
+  FindOneAndUpdateOptions,
+  FindOptions,
+  IndexDescription,
+  IndexInformationOptions,
+  ListIndexesOptions,
+  OperationOptions,
+  ReplaceOptions,
+  UpdateFilter,
+  UpdateOptions,
   WithId
 } from "mongodb";
 import {
   createDefaultConfig,
   DeletedKeys,
   DependencyCollector,
-  Document,
   enrichPromise,
-  FilterQuery,
+  Filter,
   findReferences,
   FindReferencesOptions,
   InsertionDoc,
@@ -37,17 +41,18 @@ import {
   RemoveScheduler,
   RichPromise,
   Rongo,
-  Selectable
+  Selectable,
+  UpdateDoc
 } from ".";
 
 // The Collection class
 
-export class Collection<T extends Document> {
+export class Collection<T extends Document = Document> {
   readonly name: string;
   readonly rongo: Rongo;
   readonly handle: Promise<Col<T>>;
 
-  constructor(rongo: Rongo, name: string, options: DbCollectionOptions = {}) {
+  constructor(rongo: Rongo, name: string, options: CollectionOptions = {}) {
     this.name = name;
     this.rongo = rongo;
     this.handle = rongo.handle.then(db => db.collection<T>(name, options));
@@ -76,9 +81,9 @@ export class Collection<T extends Document> {
 
   // Query methods :
 
-  async aggregate<U = T>(
+  async aggregate<U extends Document>(
     pipeline: Array<any> = [],
-    options?: CollectionAggregationOptions & { baseQuery?: boolean }
+    options?: AggregateOptions & { baseQuery?: boolean }
   ) {
     const col = await this.handle;
     const [first, ...stages] = pipeline;
@@ -91,16 +96,18 @@ export class Collection<T extends Document> {
   }
 
   async count(
-    query: FilterQuery<T> = {},
-    options?: MongoCountPreferences & { baseQuery?: boolean }
+    query: Filter<T> = {},
+    options?: CountDocumentsOptions & { baseQuery?: boolean }
   ) {
     const col = await this.handle;
     const normalized = await normalizeFilterQuery(this, query, options);
-    return col.countDocuments(normalized, options);
+    return options
+      ? col.countDocuments(normalized, options)
+      : col.countDocuments(normalized);
   }
 
-  countByKeys(keys: Array<any>, options?: MongoCountPreferences) {
-    return this.count({ [this.key]: { $in: keys } } as FilterQuery<T>, {
+  countByKeys(keys: Array<any>, options?: CountDocumentsOptions) {
+    return this.count({ [this.key]: { $in: keys } } as Filter<T>, {
       ...options,
       baseQuery: true
     });
@@ -108,17 +115,19 @@ export class Collection<T extends Document> {
 
   async distinct(
     key: string,
-    query: FilterQuery<T> = {},
-    options?: MongoDistinctPreferences & { baseQuery?: boolean }
+    query: Filter<T> = {},
+    options?: DistinctOptions & { baseQuery?: boolean }
   ) {
     const col = await this.handle;
     const normalized = await normalizeFilterQuery(this, query, options);
-    return col.distinct(key, normalized, options);
+    return options
+      ? col.distinct(key, normalized, options)
+      : col.distinct(key, normalized);
   }
 
   find(
-    query: FilterQuery<T> = {},
-    options?: FindOneOptions<T> & { baseQuery?: boolean }
+    query: Filter<T> = {},
+    options?: FindOptions<T> & { baseQuery?: boolean }
   ) {
     return enrichPromise(this, async () => {
       const col = await this.handle;
@@ -128,8 +137,8 @@ export class Collection<T extends Document> {
   }
 
   findOne(
-    query: FilterQuery<T> = {},
-    options?: FindOneOptions<T> & { baseQuery?: boolean }
+    query: Filter<T> = {},
+    options?: FindOptions<T> & { baseQuery?: boolean }
   ) {
     return enrichPromise(this, async () => {
       const col = await this.handle;
@@ -138,15 +147,15 @@ export class Collection<T extends Document> {
     });
   }
 
-  findByKey(key: any, options?: FindOneOptions<T>) {
-    return this.findOne({ [this.key]: key } as FilterQuery<T>, {
+  findByKey(key: any, options?: FindOptions<T>) {
+    return this.findOne({ [this.key]: key } as Filter<T>, {
       ...options,
       baseQuery: true
     });
   }
 
-  findByKeys(keys: Array<any>, options?: FindOneOptions<T>) {
-    return this.find({ [this.key]: { $in: keys } } as FilterQuery<T>, {
+  findByKeys(keys: Array<any>, options?: FindOptions<T>) {
+    return this.find({ [this.key]: { $in: keys } } as Filter<T>, {
       ...options,
       baseQuery: true
     });
@@ -156,42 +165,33 @@ export class Collection<T extends Document> {
     return findReferences(this, key, options);
   }
 
-  async geoHaystackSearch(
-    x: number,
-    y: number,
-    options?: GeoHaystackSearchOptions
-  ) {
-    const col = await this.handle;
-    return col.geoHaystackSearch(x, y, options);
-  }
-
-  async has(query: FilterQuery<T> = {}, options?: { baseQuery?: boolean }) {
+  async has(query: Filter<T> = {}, options?: { baseQuery?: boolean }) {
     return Boolean(await this.count(query, { ...options, limit: 1 }));
   }
 
   async hasKey(key: any) {
-    return this.has({ [this.key]: key } as FilterQuery<T>, { baseQuery: true });
+    return this.has({ [this.key]: key } as Filter<T>, { baseQuery: true });
   }
 
   async hasKeys(keys: Array<any>, options?: { some?: boolean }) {
-    const count = await this.count(
-      { [this.key]: { $in: keys } } as FilterQuery<T>,
-      { baseQuery: true, ...(options?.some && { limit: 1 }) }
-    );
+    const count = await this.count({ [this.key]: { $in: keys } } as Filter<T>, {
+      baseQuery: true,
+      ...(options?.some && { limit: 1 })
+    });
     return count === (options?.some ? 1 : keys.length);
   }
 
-  async isCapped(options?: { session: ClientSession }) {
+  async isCapped(options?: OperationOptions) {
     const col = await this.handle;
-    return col.isCapped(options);
+    return options ? col.isCapped(options) : col.isCapped();
   }
 
-  async stats(options?: { scale: number; session?: ClientSession }) {
+  async stats(options?: CollStatsOptions) {
     const col = await this.handle;
-    return col.stats(options);
+    return options ? col.stats(options) : col.stats();
   }
 
-  async watch<U = T>(
+  async watch<U extends Document>(
     pipeline?: object[],
     options?: ChangeStreamOptions & { session?: ClientSession }
   ) {
@@ -203,17 +203,17 @@ export class Collection<T extends Document> {
 
   insert(
     doc: InsertionDoc<T>,
-    options?: CollectionInsertManyOptions & { baseDocument?: boolean }
+    options?: BulkWriteOptions & { baseDocument?: boolean }
   ): RichPromise<WithId<T>>;
 
   insert(
     docs: Array<InsertionDoc<T>>,
-    options?: CollectionInsertManyOptions & { baseDocument?: boolean }
+    options?: BulkWriteOptions & { baseDocument?: boolean }
   ): RichPromise<Array<WithId<T>>>;
 
   insert(
     doc: InsertionDoc<T> | Array<InsertionDoc<T>>,
-    options?: CollectionInsertManyOptions & { baseDocument?: boolean }
+    options?: BulkWriteOptions & { baseDocument?: boolean }
   ) {
     return enrichPromise(this, async () => {
       const dependencies = new DependencyCollector(this.rongo);
@@ -229,9 +229,9 @@ export class Collection<T extends Document> {
   // Replace methods :
 
   async replaceOne(
-    query: FilterQuery<T>,
-    doc: InsertionDoc<T>,
-    options?: ReplaceOneOptions & {
+    query: Filter<T>,
+    doc: UpdateDoc<T>,
+    options?: ReplaceOptions & {
       baseQuery?: boolean;
       baseDocument?: boolean;
     }
@@ -246,7 +246,9 @@ export class Collection<T extends Document> {
         dependencies,
         options
       );
-      return col.replaceOne(normalizedQuery, normalizedDoc as T, options);
+      return options
+        ? col.replaceOne(normalizedQuery, normalizedDoc, options)
+        : col.replaceOne(normalizedQuery, normalizedDoc);
     } catch (e) {
       await dependencies.delete();
       throw e;
@@ -255,19 +257,19 @@ export class Collection<T extends Document> {
 
   replaceByKey(
     key: any,
-    doc: InsertionDoc<T>,
-    options?: ReplaceOneOptions & { baseDocument?: boolean }
+    doc: UpdateDoc<T>,
+    options?: ReplaceOptions & { baseDocument?: boolean }
   ) {
-    return this.replaceOne({ [this.key]: key } as FilterQuery<T>, doc, {
+    return this.replaceOne({ [this.key]: key } as Filter<T>, doc, {
       ...options,
       baseQuery: true
     });
   }
 
   findOneAndReplace(
-    query: FilterQuery<T>,
-    doc: InsertionDoc<T>,
-    options?: FindOneAndReplaceOption<T> & {
+    query: Filter<T>,
+    doc: UpdateDoc<T>,
+    options?: FindOneAndReplaceOptions & {
       baseQuery?: boolean;
       baseDocument?: boolean;
     }
@@ -283,11 +285,10 @@ export class Collection<T extends Document> {
           dependencies,
           options
         );
-        const result = await col.findOneAndReplace(
-          normalizedQuery,
-          normalizedDoc,
-          options
-        );
+
+        const result = options
+          ? await col.findOneAndReplace(normalizedQuery, normalizedDoc, options)
+          : await col.findOneAndReplace(normalizedQuery, normalizedDoc);
         return result.value === undefined ? null : result.value;
       } catch (e) {
         await dependencies.delete();
@@ -298,10 +299,10 @@ export class Collection<T extends Document> {
 
   findByKeyAndReplace(
     key: any,
-    doc: InsertionDoc<T>,
-    options?: FindOneAndReplaceOption<T> & { baseDocument?: boolean }
+    doc: UpdateDoc<T>,
+    options?: FindOneAndReplaceOptions & { baseDocument?: boolean }
   ) {
-    return this.findOneAndReplace({ [this.key]: key } as FilterQuery<T>, doc, {
+    return this.findOneAndReplace({ [this.key]: key } as Filter<T>, doc, {
       ...options,
       baseQuery: true
     });
@@ -310,25 +311,28 @@ export class Collection<T extends Document> {
   // Update methods :
 
   async update(
-    query: FilterQuery<T>,
-    update: UpdateQuery<T> | Partial<T>,
-    options?: UpdateManyOptions & { multi?: boolean; baseQuery?: boolean }
+    query: Filter<T>,
+    update: UpdateFilter<T> | Partial<T>,
+    options?: UpdateOptions & { multi?: boolean; baseQuery?: boolean }
   ) {
     const col = await this.handle;
     const normalized = await normalizeFilterQuery(this, query, options);
-    return col[options?.multi ? "updateMany" : "updateOne"](
-      normalized,
-      update,
-      options
-    );
+
+    return options
+      ? col[options?.multi ? "updateMany" : "updateOne"](
+          normalized,
+          update,
+          options
+        )
+      : col.updateOne(normalized, update);
   }
 
   updateByKey(
     key: any,
-    update: UpdateQuery<T> | Partial<T>,
-    options?: UpdateManyOptions
+    update: UpdateFilter<T> | Partial<T>,
+    options?: UpdateOptions
   ) {
-    return this.update({ [this.key]: key } as FilterQuery<T>, update, {
+    return this.update({ [this.key]: key } as Filter<T>, update, {
       ...options,
       baseQuery: true
     });
@@ -336,45 +340,46 @@ export class Collection<T extends Document> {
 
   updateByKeys(
     keys: Array<any>,
-    update: UpdateQuery<T> | Partial<T>,
-    options?: UpdateManyOptions
+    update: UpdateFilter<T> | Partial<T>,
+    options?: UpdateOptions
   ) {
-    return this.update(
-      { [this.key]: { $in: keys } } as FilterQuery<T>,
-      update,
-      { ...options, multi: true, baseQuery: true }
-    );
+    return this.update({ [this.key]: { $in: keys } } as Filter<T>, update, {
+      ...options,
+      multi: true,
+      baseQuery: true
+    });
   }
 
   findOneAndUpdate(
-    query: FilterQuery<T>,
-    update: UpdateQuery<T> | T,
-    options?: FindOneAndUpdateOption<T> & { baseQuery?: boolean }
+    query: Filter<T>,
+    update: UpdateFilter<T> | T,
+    options?: FindOneAndUpdateOptions & { baseQuery?: boolean }
   ) {
     return enrichPromise(this, async () => {
       const col = await this.handle;
       const normalized = await normalizeFilterQuery(this, query, options);
-      const result = await col.findOneAndUpdate(normalized, update, options);
+      const result = options
+        ? await col.findOneAndUpdate(normalized, update, options)
+        : await col.findOneAndUpdate(normalized, update);
       return result.value === undefined ? null : result.value;
     });
   }
 
   findByKeyAndUpdate(
     key: any,
-    update: UpdateQuery<T> | T,
-    options?: FindOneAndUpdateOption<T>
+    update: Filter<T> | T,
+    options?: FindOneAndUpdateOptions
   ) {
-    return this.findOneAndUpdate(
-      { [this.key]: key } as FilterQuery<T>,
-      update,
-      { ...options, baseQuery: true }
-    );
+    return this.findOneAndUpdate({ [this.key]: key } as Filter<T>, update, {
+      ...options,
+      baseQuery: true
+    });
   }
 
   findByKeysAndUpdate(
     keys: Array<any>,
-    update: UpdateQuery<T> | T,
-    options?: FindOneOptions<T> & UpdateManyOptions
+    update: Filter<T> | T,
+    options?: UpdateOptions
   ) {
     return enrichPromise(this, async () => {
       const docs = await this.findByKeys(keys, options);
@@ -386,8 +391,8 @@ export class Collection<T extends Document> {
   // Delete methods :
 
   async delete(
-    query: FilterQuery<T> = {},
-    options?: CommonOptions & {
+    query: Filter<T> = {},
+    options?: DeleteOptions & {
       single?: boolean;
       propagate?: boolean;
       baseQuery?: boolean;
@@ -408,8 +413,8 @@ export class Collection<T extends Document> {
     return remover();
   }
 
-  deleteByKey(key: any, options?: CommonOptions & { propagate?: boolean }) {
-    return this.delete({ [this.key]: key } as FilterQuery<T>, {
+  deleteByKey(key: any, options?: DeleteOptions & { propagate?: boolean }) {
+    return this.delete({ [this.key]: key } as Filter<T>, {
       ...options,
       single: true,
       baseQuery: true
@@ -418,25 +423,23 @@ export class Collection<T extends Document> {
 
   deleteByKeys(
     keys: Array<any>,
-    options?: CommonOptions & { propagate?: boolean }
+    options?: DeleteOptions & { propagate?: boolean }
   ) {
-    return this.delete({ [this.key]: { $in: keys } } as FilterQuery<T>, {
+    return this.delete({ [this.key]: { $in: keys } } as Filter<T>, {
       ...options,
       baseQuery: true
     });
   }
 
-  async drop(options?: { session?: ClientSession; propagate?: boolean }) {
+  async drop(options?: DropCollectionOptions) {
     const col = await this.handle;
     await this.delete({}, { ...options, baseQuery: true });
-    return col.drop(
-      options?.session ? { session: options?.session } : undefined
-    );
+    return options ? col.drop(options) : col.drop();
   }
 
   findOneAndDelete(
-    query: FilterQuery<T>,
-    options?: FindOneOptions<T> & { propagate?: boolean; baseQuery?: boolean }
+    query: Filter<T>,
+    options?: DeleteOptions & { propagate?: boolean; baseQuery?: boolean }
   ) {
     return enrichPromise(this, async () => {
       const col = await this.handle;
@@ -453,9 +456,9 @@ export class Collection<T extends Document> {
 
   findByKeyAndDelete(
     key: any,
-    options?: FindOneOptions<T> & { propagate?: boolean }
+    options?: DeleteOptions & { propagate?: boolean }
   ) {
-    return this.findOneAndDelete({ [this.key]: key } as FilterQuery<T>, {
+    return this.findOneAndDelete({ [this.key]: key } as Filter<T>, {
       ...options,
       baseQuery: true
     });
@@ -463,7 +466,7 @@ export class Collection<T extends Document> {
 
   findByKeysAndDelete(
     keys: Array<any>,
-    options?: FindOneOptions<T> & { propagate?: boolean }
+    options?: DeleteOptions & { propagate?: boolean }
   ) {
     return enrichPromise(this, async () => {
       const docs = await this.findByKeys(keys, options);
@@ -474,61 +477,57 @@ export class Collection<T extends Document> {
 
   // Index methods :
 
-  async createIndex(fieldOrSpec: string | any, options?: IndexOptions) {
+  async createIndex(fieldOrSpec: string | any, options?: CreateIndexesOptions) {
     const col = await this.handle;
-    return col.createIndex(fieldOrSpec, options);
+    return options
+      ? col.createIndex(fieldOrSpec, options)
+      : col.createIndexes(fieldOrSpec);
   }
 
   async createIndexes(
-    indexSpecs: IndexSpecification[],
-    options?: { session?: ClientSession }
+    indexSpecs: IndexDescription[],
+    options?: CreateIndexesOptions
   ) {
     const col = await this.handle;
-    return col.createIndexes(indexSpecs, options);
+    return options
+      ? col.createIndexes(indexSpecs, options)
+      : col.createIndexes(indexSpecs);
   }
 
-  async dropIndex(
-    indexName: string,
-    options?: CommonOptions & { maxTimeMS?: number }
-  ) {
+  async dropIndex(indexName: string, options?: DropIndexesOptions) {
     const col = await this.handle;
-    return col.dropIndex(indexName, options);
+    return options
+      ? col.dropIndex(indexName, options)
+      : col.dropIndex(indexName);
   }
 
-  async dropIndexes(options?: { session?: ClientSession; maxTimeMS?: number }) {
+  async dropIndexes(options?: DropIndexesOptions) {
     const col = await this.handle;
-    return col.dropIndexes(options);
+    return options ? col.dropIndexes(options) : col.dropIndexes();
   }
 
-  async indexes(options?: { session: ClientSession }) {
+  async indexes(options?: IndexInformationOptions) {
     const col = await this.handle;
-    return col.indexes(options);
+    return options ? col.indexes(options) : col.indexes();
   }
 
   async indexExists(
     indexes: string | string[],
-    options?: { session: ClientSession }
+    options?: IndexInformationOptions
   ) {
     const col = await this.handle;
-    return col.indexExists(indexes, options);
+    return options
+      ? col.indexExists(indexes, options)
+      : col.indexExists(indexes);
   }
 
-  async indexInformation(options?: { full: boolean; session: ClientSession }) {
+  async indexInformation(options?: IndexInformationOptions) {
     const col = await this.handle;
-    return col.indexInformation(options);
+    return options ? col.indexInformation(options) : col.indexInformation();
   }
 
-  async listIndexes(options?: {
-    batchSize?: number;
-    readPreference?: ReadPreferenceOrMode;
-    session?: ClientSession;
-  }) {
+  async listIndexes(options?: ListIndexesOptions) {
     const col = await this.handle;
     return col.listIndexes(options).toArray();
-  }
-
-  async reIndex(options?: { session: ClientSession }) {
-    const col = await this.handle;
-    return col.reIndex(options);
   }
 }

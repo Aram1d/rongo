@@ -1,22 +1,21 @@
 import {
+  AddUserOptions,
   ChangeStreamOptions,
-  ClientSession,
-  CollectionCreateOptions,
-  CommonOptions,
+  ClientSession, CollectionOptions,
+  CreateCollectionOptions,
   Db,
-  DbAddUserOptions,
-  DbCollectionOptions,
+  DbStatsOptions, ListCollectionsOptions,
   MongoClient,
-  MongoClientOptions,
-  ReadPreferenceOrMode
+  MongoClientOptions, RemoveUserOptions,
+  RunCommandOptions,
+  Document
 } from "mongodb";
 import {
   buildGraph,
   Collection,
-  Document,
   findDanglingKeys,
   Graph,
-  ObjectID,
+  ObjectId,
   Schema
 } from ".";
 
@@ -26,7 +25,6 @@ export class Rongo {
   readonly client: Promise<MongoClient>;
   readonly handle: Promise<Db>;
   graph: Graph;
-  isConnected: boolean;
 
   constructor(
     uri: string | Promise<string>,
@@ -37,8 +35,6 @@ export class Rongo {
   ) {
     this.client = Promise.resolve(uri).then(uri =>
       MongoClient.connect(uri, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
         ...options
       })
     );
@@ -50,10 +46,6 @@ export class Rongo {
     });
     this.graph = Object.create(null);
     if (schema) this.schema(schema);
-    this.isConnected = false;
-    this.client.then(client => {
-      this.isConnected = client.isConnected();
-    });
   }
 
   // Client methods :
@@ -65,7 +57,6 @@ export class Rongo {
   async close() {
     const client = await this.client;
     await client.close();
-    this.isConnected = client.isConnected();
   }
 
   // Database methods :
@@ -73,31 +64,31 @@ export class Rongo {
   async addUser(
     username: string,
     password: string,
-    options?: DbAddUserOptions
+    options?: AddUserOptions
   ) {
     const db = await this.handle;
-    return db.addUser(username, password, options);
+    return options ? db.addUser(username, password, options) : db.addUser(username, password);
   }
 
   findDanglingKeys(options?: { batchSize?: number; limit?: number }) {
     return findDanglingKeys(this, options);
   }
 
-  collection<T extends Document>(name: string, options?: DbCollectionOptions) {
+  collection<T extends Document = Document>(name: string, options?: CollectionOptions) {
     return new Collection<T>(this, name, options);
   }
 
   async command(
-    command: object,
-    options?: { readPreference?: ReadPreferenceOrMode; session?: ClientSession }
+    command: Document,
+    options?: RunCommandOptions,
   ) {
     const db = await this.handle;
-    return db.command(command, options);
+    return options ? db.command(command, options): db.command(command);
   }
 
   async createCollection<T extends Document>(
     name: string,
-    options?: CollectionCreateOptions
+    options?: CreateCollectionOptions
   ) {
     const db = await this.handle;
     await db.createCollection(name, options);
@@ -109,42 +100,39 @@ export class Rongo {
     return db.dropDatabase();
   }
 
-  async executeDbAdminCommand(
+/*  async executeDbAdminCommand(
     command: object,
     options?: { readPreference?: ReadPreferenceOrMode; session?: ClientSession }
   ) {
     const db = await this.handle;
     return db.executeDbAdminCommand(command, options);
-  }
+  }*/
 
   async listCollections(
     filter?: object,
-    options?: {
-      nameOnly?: boolean;
-      batchSize?: number;
-      readPreference?: ReadPreferenceOrMode;
-      session?: ClientSession;
+    options?: Exclude<ListCollectionsOptions, 'nameOnly'> & {
+      nameOnly: true;
     }
   ) {
     const db = await this.handle;
     return db.listCollections(filter, options).toArray();
   }
 
-  async removeUser(username: string, options?: CommonOptions) {
+  async removeUser(username: string, options?: RemoveUserOptions) {
     const db = await this.handle;
-    return db.removeUser(username, options);
+    return options ? db.removeUser(username, options) : db.removeUser(username);
   }
 
   schema(schema: Schema | string) {
     this.graph = buildGraph(schema);
   }
 
-  async stats(options?: { scale?: number }) {
+  async stats(options?: DbStatsOptions) {
     const db = await this.handle;
-    return db.stats(options);
+    return options ?  db.stats(options) : db.stats();
   }
 
-  async watch<T extends object = { _id: ObjectID }>(
+  async watch<T extends object = { _id: ObjectId }>(
     pipeline?: object[],
     options?: ChangeStreamOptions & { session?: ClientSession }
   ) {

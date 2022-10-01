@@ -1,10 +1,10 @@
-import { CommonOptions, FilterQuery as FilterQueryBase } from "mongodb";
+import { DeleteOptions, Filter as FilterBase, Document } from "mongodb";
 import { differenceWith, entries, isEmpty } from "lodash";
 import {
   Collection,
   DeletedKeys,
   DeletePolicy,
-  Document,
+  Filter,
   RemoveScheduler
 } from "../.";
 
@@ -12,9 +12,9 @@ import {
 
 export async function propagateDelete<T extends Document>(
   collection: Collection<T>,
-  query: FilterQueryBase<T>,
+  query: Filter<T>,
   single: boolean,
-  options: (CommonOptions & { propagate?: boolean }) | undefined,
+  options: (DeleteOptions & { propagate?: boolean }) | undefined,
   scheduler: RemoveScheduler,
   deletedKeys: DeletedKeys
 ) {
@@ -28,7 +28,7 @@ export async function propagateDelete<T extends Document>(
       // For each foreign key which might reference the current keys :
       for (const [foreignKey, foreignKeyConfig] of entries(foreignKeys)) {
         // Define a filter query to the concerned foreign documents :
-        const refQuery: FilterQueryBase<any> = { [foreignKey]: { $in: keys } };
+        const refQuery: Filter<any> = { [foreignKey]: { $in: keys } };
 
         // If there's no reference to the current keys in the foreign collection, ignore that step :
         if (!(await refCol.has(refQuery, { baseQuery: true }))) continue;
@@ -109,10 +109,12 @@ export async function propagateDelete<T extends Document>(
   // Finally, after clean-up, remove the documents that were still unmarked :
   return async () => {
     const col = await collection.handle;
-    return col.deleteMany(
-      { [collection.key]: { $in: keys } } as FilterQueryBase<T>,
-      options
-    );
+    return options
+      ? col.deleteMany(
+          { [collection.key]: { $in: keys } } as FilterBase<T>,
+          options
+        )
+      : col.deleteMany({ [collection.key]: { $in: keys } } as FilterBase<T>);
   };
 }
 
@@ -121,7 +123,7 @@ export async function propagateDelete<T extends Document>(
 
 async function getKeys<T extends Document>(
   collection: Collection<T>,
-  query: FilterQueryBase<T>,
+  query: Filter<T>,
   single: boolean,
   deletedKeys: DeletedKeys
 ) {

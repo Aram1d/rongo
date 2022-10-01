@@ -43,7 +43,6 @@ it("correctly connects to the database", async () => {
   expect(await rongo.active()).toBeTruthy();
   expect(await rongo.active()).toBeInstanceOf(MongoClient);
   expect(await rongo.handle).toBeInstanceOf(Db);
-  expect(rongo.isConnected).toBe(true);
   await rongo.drop();
 });
 

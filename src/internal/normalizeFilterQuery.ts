@@ -1,15 +1,16 @@
-import { FilterQuery as FilterQueryBase } from "mongodb";
+import { Filter as FilterBase } from "mongodb";
 import { isArray, isPlainObject, last } from "lodash";
-import { Collection, Document, FilterQuery, mapDeep, stackToKey } from "../.";
+import { Collection, mapDeep, stackToKey } from "../.";
+import { Document, Filter } from "mongodb";
 
 // This function transforms an augmented FilterQuery into a traditional FilterQuery
 
 export async function normalizeFilterQuery<T extends Document>(
   collection: Collection<T>,
-  query: FilterQuery<T>,
+  query: Filter<T>,
   options?: { baseQuery?: boolean }
-): Promise<FilterQueryBase<T>> {
-  if (options?.baseQuery) return query as FilterQueryBase<T>;
+): Promise<FilterBase<T>> {
+  if (options?.baseQuery) return query as FilterBase<T>;
   return mapDeep(query, function customizer(value, stack) {
     switch (last(stack)) {
       // If there's an $expr, it has to be ignored by the normalizing process :
@@ -29,7 +30,7 @@ export async function normalizeFilterQuery<T extends Document>(
           foreignKeyConfig.collection
         );
 
-        const primaryKeys = (query: FilterQuery<any>) =>
+        const primaryKeys = (query: Filter<any>) =>
           foreignCol.find(query).select(foreignCol.key);
 
         // If we have a foreign filter query :

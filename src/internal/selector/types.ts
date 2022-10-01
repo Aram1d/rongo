@@ -1,4 +1,4 @@
-import { FilterQuery, Selector } from "../../.";
+import { Filter, Selector } from "../../.";
 
 // Used by FilterSelector and SwitchSelector to filter array values and switch branches
 
@@ -14,7 +14,7 @@ export type SelectArgument =
   | string
   | number
   | Selector
-  | FilterQuery<any>
+  | Filter<any>
   | SelectorPredicateCallback;
 
 // The possible entries in the symbol table

@@ -2,28 +2,28 @@ import {
   DeletePolicy,
   Graph,
   InsertPolicy,
-  ObjectID,
+  ObjectId,
   Rongo,
   Schema
 } from "../.";
 
 // The main test database
 
-export const rongo = new Rongo("mongodb://localhost:27017/rongo_test");
+export const rongo = new Rongo("mongodb://127.0.0.1:27017/rongo_test");
 rongo.schema("./src/test/schema.test.json");
 
 // Some types for TS testing
 
 export type AuthorDb = {
-  _id: ObjectID;
+  _id: ObjectId;
   name: string;
-  favoriteBooks: Array<ObjectID>;
+  favoriteBooks: Array<ObjectId>;
 };
 
 export type BookDb = {
-  _id: ObjectID;
+  _id: ObjectId;
   title: string;
-  author: ObjectID;
+  author: ObjectId;
 };
 
 // Some test collections :

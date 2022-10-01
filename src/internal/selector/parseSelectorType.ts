@@ -1,7 +1,7 @@
 import {
   DocumentOf,
   ForeignKey,
-  ObjectID,
+  ObjectId,
   PrimaryKey,
   PrimaryKeyOf
 } from "../../.";
@@ -9,13 +9,13 @@ import {
 // Tests :
 
 type AuthorDb = {
-  _id: PrimaryKey<ObjectID>;
+  _id: PrimaryKey<ObjectId>;
   name: string;
   favoriteBooks: Array<ForeignKey<BookDb>>;
 };
 
 type BookDb = {
-  _id: PrimaryKey<ObjectID>;
+  _id: PrimaryKey<ObjectId>;
   title: string;
   author: ForeignKey<AuthorDb>;
 };

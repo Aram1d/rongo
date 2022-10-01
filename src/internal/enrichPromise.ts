@@ -1,7 +1,7 @@
+import { Document } from "mongodb";
 import { assign, isString } from "lodash";
 import {
   Collection,
-  Document,
   FindReferencesOptions,
   parseSelector,
   References,
